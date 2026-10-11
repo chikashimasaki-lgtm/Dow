@@ -144,8 +144,11 @@ function callAiWithFallback_(apiKey, prompt) {
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: { temperature: 0.3, maxOutputTokens: 2048, responseMimeType: 'application/json' },
       },
+      skipKnownExhausted: true,
     });
   } catch (e) {
+    // 全モデル失敗は「Gemini失敗」シートへ。記録の失敗でUI側のnull返却を妨げない
+    try { TokenLog.logError(SpreadsheetApp.getActive(), 'AI推奨コメント', e); } catch (le) { Logger.log('失敗ログ記録失敗: ' + le.message); }
     Logger.log('AI要約: 呼び出しに失敗 ' + redactApiKey_(e.message, apiKey));
     return null;
   }
