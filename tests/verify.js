@@ -82,6 +82,7 @@ ${read('FetchRetry.js')}
 ${read('ConfirmUi.js')}
 ${read('StockCode.js')}
 ${read('SheetUtils.js')}
+${read('SheetSize.js')}
 ${read('Code.js')}
 ${read('DowFib.js')}
 ${read('Bloomberg.js')}
@@ -1007,7 +1008,7 @@ console.log('\n【23e】旧ロイター取り込み（MarketBriefing へ移し�
     // 2026-10-05: 「終値」列が日付書式のままで、終値 5,230 が Date(1914/04/26) として読まれ、現在値が -1,757,322,000,000 になった。
     const fmts = {};
     const sigStub = (rows) => ({
-      getMaxRows: () => 1000, getLastRow: () => rows.length + 1,
+      getMaxRows: () => 1000, getMaxColumns: () => 26, getLastRow: () => rows.length + 1,
       getRange: (r, c, nr, nc) => ({
         setNumberFormat(f) { fmts[c] = f; return this; },
         getValues: () => rows.map(x => x.slice()),

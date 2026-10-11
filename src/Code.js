@@ -135,8 +135,12 @@ function setup() {
       ['7203', 'トヨタ自動車'], ['6758', 'ソニーグループ'], ['9984', 'ソフトバンクグループ'],
       ['8306', '三菱UFJ'], ['6501', '日立製作所'],
     ]);
+    // 新規作成時だけ空白の行を削る（利用者がコードを貼って使うシート。貼り付けで行は自動で増える。
+    // 書式 '@' は直前行から引き継がれる。プライム取得は ensureSheetSize_ で行を確保する）
+    trimSheet_(uni, 6, 2);
   }
-  if (!ss.getSheetByName(SK.SHEETS.SIGNALS)) ss.insertSheet(SK.SHEETS.SIGNALS);
+  // 候補シートは作業用。中身は走査が ensureSheetSize_ で行・列を確保して書く（L1の進捗表示まで12列は残す）
+  if (!ss.getSheetByName(SK.SHEETS.SIGNALS)) trimSheet_(ss.insertSheet(SK.SHEETS.SIGNALS), 1, 12);
   // 相場マクロ・急落サインもここで作る。以前はセットアップ対象外だったため、
   // 初回は「相場マクロ/急落サインを更新」を実行するまでシート自体が存在しなかった。
   try { setupMacroSheets_(); } catch (e) { Logger.log('相場マクロシートの作成に失敗: ' + e.message); }
@@ -181,6 +185,7 @@ function fetchPrimeUniverse() {
 
   const uni = SpreadsheetApp.getActive().getSheetByName(SK.SHEETS.UNIVERSE);
   uni.clear();
+  ensureSheetSize_(uni, Math.max(collect.length + 1, 2), 2);   // 新規作成時に空白を削ってあるので、書く前に行を確保
   uni.getRange(1, 1, 1, 2).setValues([['コード', '銘柄名']]);
   // 値を入れる前にテキスト書式にする。後からだと "7203" は既に数値7203になっていて
   // 書式を変えても型は戻らない（表示が 7203 に見えても中身は数値のまま）。
@@ -212,6 +217,7 @@ const CAND_HEADERS_ = ['コード', '銘柄名', '終値', '確度', 'スコア'
 const CAND_FORMATS_ = ['@', '@', '#,##0.##', '@', '0.00', '#,##0.##', '#,##0.##', '0.000', '0.00', '@', '@'];
 function applyCandidateFormats_(sig) {
   try {
+    ensureSheetSize_(sig, 2, CAND_HEADERS_.length);   // 空白を削った候補シートでも2行目以降に書式を当てられるように
     const rows = Math.max(sig.getMaxRows() - 1, 1);
     CAND_FORMATS_.forEach((f, i) => sig.getRange(2, i + 1, rows, 1).setNumberFormat(f));
   } catch (e) { Logger.log('候補シートの書式設定に失敗: ' + e.message); }
@@ -234,7 +240,7 @@ function scanSignalsRun_() {
   const ss  = SpreadsheetApp.getActive();
   const uni = ss.getSheetByName(SK.SHEETS.UNIVERSE);
   let sig = ss.getSheetByName(SK.SHEETS.SIGNALS);
-  if (!sig) sig = ss.insertSheet(SK.SHEETS.SIGNALS);
+  if (!sig) sig = trimSheet_(ss.insertSheet(SK.SHEETS.SIGNALS), 1, 12);   // 作業用シート。以降の書き込みは ensureSheetSize_ で確保
   if (!uni || uni.getLastRow() < 2) throw new Error('「銘柄」シートにコードを入れてください');
 
   // 進捗は「銘柄シートの何行目まで処理したか」だけを持つ。
@@ -253,6 +259,7 @@ function scanSignalsRun_() {
     const oldFilter = sig.getFilter(); if (oldFilter) oldFilter.remove();
     sig.clear();
     sig.setConditionalFormatRules([]);
+    ensureSheetSize_(sig, 2, 12);   // 空白を削ってあるので書く前に確保（L1の進捗表示ぶんの12列まで）
     sig.getRange(1, 1, 1, CAND_HEADERS_.length).setValues([CAND_HEADERS_]);
     // 列ごとの書式を明示する（コード列はテキスト＝"5602" が 5,602 と表示されたり先頭0が落ちたりしない。終値などは数値＝日付書式の取り違え防止）
     applyCandidateFormats_(sig);
@@ -282,6 +289,7 @@ function scanSignalsRun_() {
     // バッチごとに「書き込み → カーソル確定」の順で確定させる。
     // 以前は全バッチ終了後にまとめて書いていたため、最後のバッチ中に6分制限で強制終了すると
     // 未書込のbufferと処理済みの分がまとめて失われ、再実行で重複追記が起きていた。
+    if (buffer.length) ensureSheetSize_(sig, sig.getLastRow() + buffer.length, CAND_HEADERS_.length);
     if (buffer.length) sig.getRange(sig.getLastRow() + 1, 1, buffer.length, CAND_HEADERS_.length).setValues(buffer);
     cursor += slice.length;
     props.setProperty('SK_CURSOR', String(cursor));
@@ -409,9 +417,11 @@ function writeScanStatus_(sig, done, total, failed) {
         + (failed ? ' / 取得失敗' + failed + '件' : '') + ' … 最終更新 ' + stamp;
     // 作業用の候補シートは非表示なので、人が見る「売買プラン」の右上（L1）にも出す。
     // 走査が終われば writePlanSheet_ が要約で上書きする。取得失敗の件数はM1に残す。
+    ensureSheetSize_(sig, 1, 12);
     sig.getRange(1, 12).setValue(msg);
     const plan = SpreadsheetApp.getActive().getSheetByName(SK.SHEETS.PLAN);
     if (plan) {
+      ensureSheetSize_(plan, 1, 13);
       if (!finished) plan.getRange(1, 12).setValue(msg).setFontColor('#b26a00').setFontWeight('bold');
       plan.getRange(1, 13).setValue(finished && failed ? '（' + failed + '銘柄は株価を取得できず未判定）' : '')
         .setFontColor('#8a3a3a');
@@ -1340,6 +1350,7 @@ function createUsageSheet() {
 function writeStatsSheet_(map) {
   const ss = SpreadsheetApp.getActive();
   let sh = ss.getSheetByName(SK.SHEETS.STATS);
+  const isNewSheet = !sh;
   if (!sh) sh = ss.insertSheet(SK.SHEETS.STATS);
   const old = sh.getFilter(); if (old) old.remove();
   sh.clear();
@@ -1347,7 +1358,6 @@ function writeStatsSheet_(map) {
   const CAVEAT = '⚠ 参考値です。シグナルの順位付けには使っていません。'
     + '（生の騰落率のみでベンチマーク未控除／件数' + BT_MIN_SAMPLE + '件では勝率60%と50%を統計的に区別できない'
     + '／同一シグナルが連日重複計上される／約定を当日終値と仮定＝実際は翌日寄付、手数料未考慮）';
-  sh.getRange(1, 1).setValue(CAVEAT);
   const header = ['パターン', '方向', '件数', '勝ち', '騰落率合計', '勝率%', '平均騰落率%', '参考重み', '先読み日'];
   const rows = Object.keys(map).map(name => {
     const s = map[name], nn = s.n || 0;
@@ -1358,6 +1368,8 @@ function writeStatsSheet_(map) {
             Math.round((s.retSum || 0) * 10000) / 10000, Math.round(win * 10) / 10, Math.round(exp * 100) / 100, suggest, signalHorizon_(name)];
   });
   rows.sort((a, b) => b[6] - a[6]);
+  ensureSheetSize_(sh, rows.length + 2, header.length);   // 新規作成時に空白を削るので、書く前に行・列を確保
+  sh.getRange(1, 1).setValue(CAVEAT);
   sh.getRange(2, 1, 1, header.length).setValues([header]);
   if (rows.length) {
     sh.getRange(3, 1, rows.length, header.length).setValues(rows);
@@ -1377,6 +1389,7 @@ function writeStatsSheet_(map) {
   sh.setRowHeight(1, 44);
   autoFit_(sh, header.length);
   sh.setTabColor('#4a90d9');
+  if (isNewSheet) trimSheet_(sh);   // 新規作成時だけ空白の行・列を削る
 }
 
 // ============================================================================
@@ -1970,6 +1983,7 @@ function attachPlanExtras_(targets) {
 function writePlanSheet_(targets) {
   const ss = SpreadsheetApp.getActive();
   let sh = ss.getSheetByName(SK.SHEETS.PLAN);
+  const isNewSheet = !sh;
   if (!sh) sh = ss.insertSheet(SK.SHEETS.PLAN);
   // 売買プランは1枚にまとめる（ユーザー指示）。一時期だけ作っていた別シートが残っていれば消す。
   // 中身は売買プランと同じ数字の写しなので、消しても失うものはない。
@@ -1977,6 +1991,7 @@ function writePlanSheet_(targets) {
   if (leftover) ss.deleteSheet(leftover);
   const oldFilter = sh.getFilter(); if (oldFilter) oldFilter.remove();
   sh.clear();
+  ensureSheetSize_(sh, Math.max(targets.length + 1, 2), 13);   // 新規作成時に空白を削るので、書く前に確保（L1/M1の要約・進捗まで13列）
   sh.getRange(1, 1, 1, PLAN_HEADERS_.length).setValues([PLAN_HEADERS_]);
   sh.setTabColor('#1b7a3d');
   // 12列目（L1）に要約。ヘッダーは11列目（メモ）までなので空いている列に置く。
@@ -1990,6 +2005,7 @@ function writePlanSheet_(targets) {
   if (!targets.length) {
     sh.getRange(2, 1).setValue('本日の買い推奨はありません（保有銘柄もありません）');
     styleSheet_(sh, PLAN_HEADERS_.length, '#14331f', '#eaf6ee');
+    if (isNewSheet) trimSheet_(sh, undefined, 13);   // 新規作成時だけ空白を削る（M1まで13列は残す。webStatus が13列を読む）
     return plans;
   }
 
@@ -2053,6 +2069,7 @@ function writePlanSheet_(targets) {
   sh.setFrozenRows(1);
   sh.setFrozenColumns(3);
   sh.setRowHeightsForced(2, n, 42);
+  if (isNewSheet) trimSheet_(sh, undefined, 13);   // 新規作成時だけ空白を削る（M1まで13列は残す。webStatus が13列を読む）
   return plans;
 }
 
@@ -2180,18 +2197,22 @@ function writeBriefingPicks_(targets, plans) {
   const id = briefingSpreadsheetId_();
   if (!id) return;
   const ss = SpreadsheetApp.openById(id);
-  const sh = ss.getSheetByName(BRIEFING_SHEET_) || ss.insertSheet(BRIEFING_SHEET_);
+  let sh = ss.getSheetByName(BRIEFING_SHEET_);
+  const isNewSheet = !sh;
+  if (!sh) sh = ss.insertSheet(BRIEFING_SHEET_);
   sh.clear();
+  const rows = briefingRows_(targets, plans);
+  ensureSheetSize_(sh, 3 + Math.max(rows.length, 1) + 1, 8);   // 新規作成時に空白を削るので、書く前に行・列を確保
   sh.getRange(1, 1).setValue('更新: ' + Utilities.formatDate(new Date(), 'JST', 'yyyy/MM/dd HH:mm') + ' JST（' + APP_NAME_ + 'の走査結果）');
   const header = ['確度', 'コード', '銘柄名', '終値', '買い', '利確', '損切り', '根拠'];
   sh.getRange(2, 1, 1, header.length).setValues([header]).setFontWeight('bold').setBackground('#14331f').setFontColor('#ffffff');
-  const rows = briefingRows_(targets, plans);
   if (rows.length) sh.getRange(3, 1, rows.length, header.length).setValues(rows);
   else sh.getRange(3, 1).setValue('本日の買い推奨はありません');
   sh.getRange(3 + Math.max(rows.length, 1) + 1, 1).setValue('【免責】情報提供目的です。投資助言ではありません。');
   if (rows.length) [4, 6, 7].forEach(col => sh.getRange(3, col, rows.length, 1).setNumberFormat('#,##0.##'));
   sh.getRange(3, 2, Math.max(rows.length, 1), 1).setNumberFormat('@');
   sh.setTabColor('#1b7a3d');
+  if (isNewSheet) trimSheet_(sh);   // 新規作成時だけ空白の行・列を削る
 }
 
 // MarketBriefingに出す行（純関数）。発注できる推奨だけを載せる。

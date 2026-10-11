@@ -975,7 +975,9 @@ function writeAlertSheet_(conds, lit, data) {
   const startRow = MACRO.ALERT_START_ROW;
   const width = 3;
   // 前回より行数が減っても古い内容が残らないよう、余裕を持ってクリアしてから書く
-  sh.getRange(startRow, 1, Math.max(rows.length, 20), width).clearContent().clearFormat();
+  ensureSheetSize_(sh, startRow + rows.length - 1, width);   // 新規作成時に空白を削ってあるので、書く前に行を確保
+  // クリア範囲は実在する行までに収める（行を足していない余白は元から空）
+  sh.getRange(startRow, 1, Math.min(Math.max(rows.length, 20), sh.getMaxRows() - startRow + 1), width).clearContent().clearFormat();
   const grid = rows.map(r => { const a = r.slice(0, width); while (a.length < width) a.push(''); return a; });
   sh.getRange(startRow, 1, grid.length, width).setValues(grid);
 
@@ -991,7 +993,9 @@ function writeAlertSheet_(conds, lit, data) {
 // （未取込を黙って空シートにすると「対象銘柄に決算が無い」のか「取得自体に失敗した」のか区別できない）。
 function writeEarningsCalendarSheet_(entries, nameMap, note) {
   const ss = SpreadsheetApp.getActive();
-  const sh = ss.getSheetByName(MACRO.CALENDAR_SHEET) || ss.insertSheet(MACRO.CALENDAR_SHEET);
+  let sh = ss.getSheetByName(MACRO.CALENDAR_SHEET);
+  const isNewSheet = !sh;
+  if (!sh) sh = ss.insertSheet(MACRO.CALENDAR_SHEET);
   sh.clear();
   const header = ['コード', '銘柄名', '発表予定日', '確度', '時価総額（億円）'];
   const rows = (entries || []).map(e => [
@@ -1002,12 +1006,14 @@ function writeEarningsCalendarSheet_(entries, nameMap, note) {
   const width = header.length;
   // コード列は値を入れる前にテキスト書式にする（「シグナル」「銘柄」シートと揃える）。
   // 後から書式を変えても、既に数値化された 7203 は型が戻らない。
+  ensureSheetSize_(sh, Math.max(grid.length, 2), width);   // 新規作成時に空白を削るので、書く前に行・列を確保
   sh.getRange(2, 1, sh.getMaxRows() - 1, 1).setNumberFormat('@');
   sh.getRange(1, 1, grid.length, width).setValues(grid);
   // 時価総額は3桁カンマ区切りで表示する（Asset_Status等、他プロジェクトの金額列と同じ表記）
   if (rows.length) sh.getRange(2, width, rows.length, 1).setNumberFormat('#,##0');
   try { styleSheet_(sh, width, '#1a4d7a', '#eaf3fb'); autoFit_(sh, width); } catch (e) {}
   sh.setTabColor('#2e75b6');
+  if (isNewSheet) trimSheet_(sh);   // 新規作成時だけ空白の行・列を削る
 }
 
 // メニュー本体：edinetdb.jp から向こう CALENDAR_LOOKAHEAD_DAYS 日分の決算発表予定を取得し、
@@ -1092,6 +1098,8 @@ function setupMacroSheets_() {
     input.getRange(2, 3, seed.length - 1, 1).setNumberFormat('yyyy/MM/dd');
     applyMacroValidation_(input, seed.length);
     input.setTabColor('#8e44ad');
+    // 新規作成時だけ空白を削る。下段の急落サイン表は writeAlertSheet_ が ensureSheetSize_ で行を確保して書く
+    trimSheet_(input, seed.length, 3);
   }
   return { input };
 }
