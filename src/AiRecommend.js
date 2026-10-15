@@ -189,7 +189,7 @@ function writeAiCommentsIntoPlan_(sh, planRows, comments, prompt) {
     if (c == null || c === '') return;
     // Geminiの生成文はプロンプト経由で外部データ（決算カレンダー等）の影響を受けるため、
     // 先頭が =+-@ だとGoogle Sheetsが数式として解釈してしまう（数式インジェクション）。
-    // sanitizeForSheetCell_ (SheetUtils.js) はAbitus-Automation/PdfAutoRename等で
+    // sanitizeForSheetCell_ (SheetUtils.js) はAbitus-Automation/FileAutoRename等で
     // 同種のAI生成テキスト・外部由来テキストの書き込み前に使っているのと同じ対策。
     const text = prompt ? flagUnsourcedNumbers_(String(c), prompt.split('【出力形式】')[0]) : String(c);
     sh.getRange(r.row, AI_MEMO_COL_).setValue(sanitizeForSheetCell_(text));
