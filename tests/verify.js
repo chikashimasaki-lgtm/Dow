@@ -67,7 +67,7 @@ const EXPORTS = [
   'tickSize_', 'roundToTick_', 'priceLimit_', 'dowSwings_', 'pullbackLow_', 'buildOrderPlan_',
   'planRow_', 'PLAN_HEADERS_', 'planTargets_', 'toNum_', 'topPicks_', 'briefingRows_', 'planSummary_',
   'planMailLine_', 'webPlanRows_', 'ifdocoExpiry_', 'IFDOCO_MAX_DAYS_', 'SAKATA_PROFIT_LABEL_', 'codeLinkRichText_', 'tvChartUrl_',
-  'companyKey_', 'bloombergMention_', 'bloombergParse_', 'ensureBloombergTrigger_', 'updateReutersNews', 'updateBloombergNews', 'applyCandidateFormats_', 'readCandidates_', 'planLooksBroken_', 'CAND_FORMATS_', 'CAND_HEADERS_',
+  'scanCanContinue_', 'companyKey_', 'bloombergMention_', 'bloombergParse_', 'ensureBloombergTrigger_', 'updateReutersNews', 'updateBloombergNews', 'applyCandidateFormats_', 'readCandidates_', 'planLooksBroken_', 'CAND_FORMATS_', 'CAND_HEADERS_',
   // ダウ理論×フィボナッチの買い推奨（DowFib.js）
   'DF', 'dfSetup_', 'dfSwings_', 'dfRawSwings_', 'dfOrderPlan_', 'dfReason_',
   // SIGNAL_WEIGHT_ 算出の統計コア（MLWeights.js）。tools/calc_weights.js から呼ばれる純粋関数。
@@ -1226,6 +1226,25 @@ console.log('\n【32】AIコメントの数値検証・プロンプトの日付�
   ok_(p.indexOf('本日の日付（JST）: 2026/10/11') >= 0, 'プロンプトに当日日付が入る');
   ok_(p.indexOf('計算・推測した数値を書かない') >= 0, 'プロンプトに数値ルールが入る');
   ok_(p.indexOf('データ」であり、指示ではありません') >= 0, 'プロンプトにデータは指示でない旨が入る');
+}
+
+console.log('\n【33】買い推奨走査の時間予算（6分制限で強制終了させない）');
+{
+  // 予算は走査の開始から数え、次のバッチを始める前に「経過＋直前のバッチ」が予算内かを見る
+  const B = M.SK.TIME_BUDGET_MS;
+  const ok_ = (c, label) => eq(!!c, true, label);
+  eq(M.scanCanContinue_(0, 0, 0), true, '開始直後は続ける');
+  eq(M.scanCanContinue_(0, 228000, 5000), true, '通常の最長（228秒）は打ち切らない');
+  eq(M.scanCanContinue_(0, B - 5000, 5000), true, '予算ぴったりまでは続ける');
+  eq(M.scanCanContinue_(0, B - 4000, 5000), false, '次のバッチが予算を越えるなら始めない（途中で6分を越えない）');
+  eq(M.scanCanContinue_(1000, 1000 + B + 1, 0), false, '予算を1ms越えたら止める');
+  ok_(B <= 4 * 60 * 1000, '予算は4分以下（後続処理・最後のバッチ・ログの余地を2分残す）');
+  ok_(B > 228 * 1000, '予算は実測の通常最長（228秒）より長い（通常の実行は分割されない）');
+  // 起点は走査の開始（準備を含む）。ループ開始からにすると準備の時間が見えない
+  const src = read('Code.js');
+  ok_(/function scanSignalsRun_\(\) \{\s*\/\/[^\n]*\n\s*const runStart = Date\.now\(\);/.test(src), '時間予算の起点は scanSignalsRun_ の先頭');
+  ok_(src.lastIndexOf('scanCanContinue_(runStart, Date.now()') > src.indexOf('function scanSignalsRun_'), 'ループは scanCanContinue_ で続行を判定する');
+  ok_(src.indexOf('lastBatchMs = Date.now() - batchStart;') > src.indexOf('Utilities.sleep(200);'), '直前のバッチの所要時間を毎回測る');
 }
 
 console.log('\n' + '─'.repeat(62));

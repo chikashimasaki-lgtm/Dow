@@ -20,7 +20,11 @@ const SK = {
   YAHOO_RANGE: '6mo',   // 保有株の売買プラン・旧集計用
   SCAN_RANGE: '1y',     // 買い推奨の走査用。主要トレンドの山谷（左右10本）を2組そろえるのに半年では足りない
   BATCH: 40,
-  TIME_BUDGET_MS: 4.5 * 60 * 1000,
+  // 1回の実行（走査の開始から、次のバッチを始めてよい上限）。GAS の6分制限に対して、
+  // 後続処理（売買プラン・メール・連動）と最後のバッチの余地を残す。
+  // 2026-10 の実測: 手動の走査は平均144秒・最大228秒。経過＋直前のバッチが240秒を超えるならバッチを始めず、残りは90秒後に自動再開する。
+  // （以前は 270秒 をループ開始から数え、走査前の準備・後続処理・バッチ内の時間を含めていなかった）
+  TIME_BUDGET_MS: 4 * 60 * 1000,
   // 信用需給フィルター（動画の閾値）。地合いと係数の単一ソース。MarketMacro.js が参照。
   // RATIO_TREND_BAND: 信用倍率の「前回公表比」で上昇/低下を判定するときの不感帯（±2%）。
   //   以前は水準判定（倍率 >= 1.0 で買い方過多）だったが、基準にしている日経レバ1570の倍率は
@@ -225,7 +229,19 @@ function applyCandidateFormats_(sig) {
 
 // 実行記録（効率化KPI、共通モジュール RunLog.js）で包んだ入口。本体は scanSignalsRun_
 function scanSignals() { return runLogged_('買い推奨走査', () => scanSignalsRun_()); }
+
+/**
+ * 時間予算の判定（純関数）。次のバッチを始めてよいか。
+ * 実行の開始からの経過に、直前のバッチの所要時間を足して予算内に収まるかで見る。
+ * 予算ぎりぎりでバッチを始めると、その最中に6分制限で強制終了し、未確定の分が失われるため。
+ */
+function scanCanContinue_(runStartMs, nowMs, lastBatchMs) {
+  return (nowMs - runStartMs) + (lastBatchMs || 0) <= SK.TIME_BUDGET_MS;
+}
+
 function scanSignalsRun_() {
+  // 時間予算は走査の開始（準備・ロック・シート整備を含む）から数える
+  const runStart = Date.now();
   // 自動再開トリガーと手動実行が重なった場合の二重追記を防ぐ（多重実行排他）
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) {
@@ -266,9 +282,10 @@ function scanSignalsRun_() {
     failed = 0;
   }
 
-  const start = Date.now();
+  let lastBatchMs = 0;
   while (cursor < total) {
-    if (Date.now() - start > SK.TIME_BUDGET_MS) break;
+    if (!scanCanContinue_(runStart, Date.now(), lastBatchMs)) break;   // 予算切れ。残りは次回（下の自動再開）
+    const batchStart = Date.now();
     const slice = universe.slice(cursor, cursor + SK.BATCH);
     const resps = fetchAllWithRetry_(slice.map(([code]) => yahooChartRequest_(code, SK.SCAN_RANGE)));
     if (!resps) break;   // ネットワークごと落ちている。カーソルは進めず次回に持ち越す。
@@ -296,12 +313,14 @@ function scanSignalsRun_() {
     props.setProperty('SK_FAILED', String(failed));
     writeScanStatus_(sig, cursor, total, failed);
     Utilities.sleep(200);
+    lastBatchMs = Date.now() - batchStart;
   }
 
   clearResumeTriggers_();
+  const elapsedSec = Math.round((Date.now() - runStart) / 1000);
   if (cursor < total) {
     ScriptApp.newTrigger('scanSignals').timeBased().after(90 * 1000).create();
-    Logger.log('一時停止: ' + cursor + '/' + total + '銘柄。90秒後に自動再開。');
+    Logger.log('一時停止: ' + cursor + '/' + total + '銘柄（' + elapsedSec + '秒）。90秒後に自動再開。');
     ss.toast(cursor + '/' + total + '銘柄まで完了。90秒後に自動再開します', APP_NAME_, 8);
     return;
   }
@@ -309,7 +328,7 @@ function scanSignalsRun_() {
   props.deleteProperty('SK_CURSOR');
   props.deleteProperty('SK_FAILED');
   const nCand = Math.max(sig.getLastRow() - 1, 0);
-  Logger.log('走査完了: 候補 ' + nCand + '件 / 取得失敗 ' + failed + '件');
+  Logger.log('走査完了: 候補 ' + nCand + '件 / 取得失敗 ' + failed + '件 / ' + elapsedSec + '秒（後続処理は含まず）');
 
   // 売買プラン（買い推奨＋保有株）→ 通知メール → MarketBriefingへの連動、の順。
   // メールは発注に使うので先に出し、連動と後片付けは失敗しても走査結果を壊さない。
