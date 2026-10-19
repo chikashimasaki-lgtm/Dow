@@ -820,6 +820,18 @@ console.log('\n【17】ダウ理論のスイングとトレンド判定');
     const p4 = [[0, 110], [30, 80], [55, 120], [80, 95], [110, 118], [114, 108], [117, 112], [121, 102], [123, 106], [124, 113]];
     eq(M.dfSetup_(mk(p4, 2000)), null, '高値を更新していなければ成立しない');
 
+    // 投資格言「急落は3日待て」: 直近3営業日以内に前日比-3%以下の急落があれば見送る（無効化すれば成立する）
+    {
+      const e = bars.length - 1, w = bars.map(b => Object.assign({}, b));
+      w[e - 1].c = w[e - 2].c * 0.96;       // e-1 日に -4% の急落（その後 e 日は上昇）
+      const off = M.DF.PANIC_WAIT_DAYS;
+      M.DF.PANIC_WAIT_DAYS = 0;
+      const without = M.dfSetup_(w);
+      M.DF.PANIC_WAIT_DAYS = off;
+      if (without) eq(M.dfSetup_(w), null, '急落から3営業日以内は買い推奨に出さない');
+      else eq(M.dfSetup_(bars) != null, true, '急落が無ければ従来どおり成立する');
+    }
+
     // 先読みしない: e より後の足（さらに安い安値）を足しても、e 時点の判定は変わらない
     const future = mk(path.concat([[140, 60]]), 0);
     future[124].v = 2000;

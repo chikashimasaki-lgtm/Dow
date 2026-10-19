@@ -40,6 +40,10 @@ const DF = {
   // 2022- 平均 1.49%→1.65%（PF 1.39→1.41、20日保有のベンチ差 +0.77%→+1.15%）。件数は 1日 約2.3件→約1件。
   MIN_VOL_RATIO: 1.0,    // 当日出来高 / 直近20日平均 がこれ未満なら不成立（出来高の裏付けなしの上抜け）
   BREAK_MIN_ATR: 0.25,   // 終値が戻り高値を ATR14×これ 以上上抜けていなければ不成立（ぎりぎりの上抜け）
+  // ── 投資格言「急落は3日待て」（2026-10-20）。0 なら無効 ──
+  // 日足の前日比が -PANIC_DROP 以下の急落があった日から PANIC_WAIT_DAYS 営業日が経つまでは、買い推奨に出さない。
+  PANIC_WAIT_DAYS: 3,
+  PANIC_DROP: 0.03,
   DESC_HIGHS: 0,         // 戻り高値の連続切り下げで除外（1・2とも両期間で成績が悪化したため無効のまま）
 };
 
@@ -159,6 +163,13 @@ function dfSetup_(bars, e, rawP, rawM) {
   for (let i = mh.i + 1; i <= e; i++) if (bars[i].c > mh.p && bars[i - 1].c <= mh.p) brk = i;
   if (brk < 0 || e - brk >= c.BREAK_WINDOW) return null;
   for (let i = brk; i <= e; i++) if (bars[i].c <= mh.p) return null;
+
+  // 急落の直後（急落日から PANIC_WAIT_DAYS 営業日未満）は見送る
+  if (c.PANIC_WAIT_DAYS > 0 && c.PANIC_DROP > 0) {
+    for (let i = Math.max(1, e - c.PANIC_WAIT_DAYS + 1); i <= e; i++) {
+      if (bars[i].c / bars[i - 1].c - 1 <= -c.PANIC_DROP) return null;
+    }
+  }
 
   const stop = pl - atr * c.STOP_ATR_BUF;
   const target = L.p + impulse * c.TARGET_EXT;
