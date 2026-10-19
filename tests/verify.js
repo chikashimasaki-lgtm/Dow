@@ -827,8 +827,11 @@ console.log('\n【17】ダウ理論のスイングとトレンド判定');
       const off = M.DF.PANIC_WAIT_DAYS;
       M.DF.PANIC_WAIT_DAYS = 0;
       const without = M.dfSetup_(w);
+      M.DF.PANIC_WAIT_DAYS = 3;
+      const waited = M.dfSetup_(w);
       M.DF.PANIC_WAIT_DAYS = off;
-      if (without) eq(M.dfSetup_(w), null, '急落から3営業日以内は買い推奨に出さない');
+      eq(off, 0, '急落待ちは既定で無効（バックテストで成績が下がったため）');
+      if (without) eq(waited, null, '有効にすると急落から3営業日以内は買い推奨に出さない');
       else eq(M.dfSetup_(bars) != null, true, '急落が無ければ従来どおり成立する');
     }
 
