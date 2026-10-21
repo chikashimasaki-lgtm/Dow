@@ -83,10 +83,29 @@ function paperLastRow_(sh) {
   return 0;
 }
 
-/** 本文の文字色を黒に揃える（白文字のままだと白背景で「データが空」に見える）。 */
+/**
+ * 本文の書式を売買プランに揃える（金額は3桁カンマ、コードは文字列で右寄せ、日付・確度・状態は中央）。
+ * 文字色も黒に固定する（白文字のままだと白背景で「データが空」に見える）。列全体に掛けるので追記行も同じ書式になる。
+ */
 function paperBodyColor_(sh) {
-  sh.getRange(2, 1, Math.max(sh.getMaxRows() - 1, 1), PT_HEADERS_.length).setFontColor('#000000');
+  const n = Math.max(sh.getMaxRows() - 1, 1), C = PT_COL_;
+  const col = c => sh.getRange(2, c, n, 1);
+  sh.getRange(2, 1, n, PT_HEADERS_.length).setFontColor('#000000').setVerticalAlignment('middle');
   sh.getRange(2, 16, 9, 2).setFontColor('#000000');
+  [C.ENTRY, C.TARGET, C.STOP, C.EXIT].forEach(c => col(c).setNumberFormat('#,##0.##').setHorizontalAlignment('right'));
+  [C.SHARES, C.PNL].forEach(c => col(c).setNumberFormat('#,##0').setHorizontalAlignment('right'));
+  col(C.PCT).setNumberFormat('#,##0.00').setHorizontalAlignment('right');
+  col(C.DAYS).setNumberFormat('0').setHorizontalAlignment('right');
+  col(C.CODE).setNumberFormat('@').setHorizontalAlignment('right');
+  [C.DATE, C.GRADE, C.STATE, C.EXIT_DATE].forEach(c => col(c).setHorizontalAlignment('center'));
+  col(C.NAME).setHorizontalAlignment('left');
+  sh.getRange(7, 17).setNumberFormat('#,##0');
+}
+
+/** 台帳を記録日の新しい順に並べる（集計欄のP:Q列は動かさない）。 */
+function paperSort_(sh) {
+  const last = paperLastRow_(sh);
+  if (last >= 3) sh.getRange(2, 1, last - 1, PT_HEADERS_.length).sort({ column: PT_COL_.DATE, ascending: false });
 }
 
 function paperSheet_() {
@@ -150,6 +169,7 @@ function recordPaperTrades_(targets, plans) {
   ensureSheetSize_(sh, start + rows.length - 1, PT_HEADERS_.length + 4);
   sh.getRange(start, 1, rows.length, PT_HEADERS_.length).setValues(rows);
   sh.getRange(start, PT_COL_.CODE, rows.length, 1).setNumberFormat('@');
+  paperSort_(sh);
   return rows.length;
 }
 
@@ -163,6 +183,7 @@ function updatePaperTrades_() {
   const lastRow = sh ? paperLastRow_(sh) : 0;
   if (lastRow < 2) return { checked: 0, settled: 0 };
   paperBodyColor_(sh);
+  paperSort_(sh);   // 行番号で更新するので、読む前に並べ終える
   const n = lastRow - 1;
   const vals = sh.getRange(2, 1, n, PT_HEADERS_.length).getValues();
   const disp = sh.getRange(2, 1, n, 2).getDisplayValues();
