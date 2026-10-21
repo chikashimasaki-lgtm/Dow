@@ -111,6 +111,7 @@ function onOpen() {
     .addSubMenu(ui.createMenu('個別に更新')
       .addItem('相場マクロ/急落サインを更新',   'updateMarketMacro')
       .addItem('決算カレンダーを更新',          'updateEarningsCalendar')
+      .addItem('仮想売買を更新（買い推奨を買ったと仮定した結果）', 'updatePaperTrades')
       .addItem('AI推奨コメントを生成（参考・投資助言ではありません）', 'generateAiSummary'))
     .addSubMenu(ui.createMenu('設定とメンテナンス')
       .addItem('セットアップ',                  'setup')
@@ -345,6 +346,10 @@ function scanSignalsRun_() {
   try {
     writeBriefingPicks_(result.targets, result.plans);
   } catch (e) { Logger.log('MarketBriefingへの書き込みに失敗（売買プランは正常）: ' + e.message); }
+  try {
+    recordPaperTrades_(result.targets, result.plans);   // 仮想売買の台帳へ今日の買い推奨を追記
+    updatePaperTrades_();                                // 保有中の仮想売買を最新の日足で判定
+  } catch (e) { Logger.log('仮想売買の更新に失敗（売買プランは正常）: ' + e.message); }
   hideWorkSheets_();
 
   const picks = result.targets.filter(t => t.pick);
@@ -2150,6 +2155,7 @@ function buildPlans() {
   const r = buildPlansFromSignals_(sig);
   const ok = Object.keys(r.plans).filter(k => r.plans[k].ok).length;
   const picks = r.targets.filter(t => t.pick).length;
+  try { recordPaperTrades_(r.targets, r.plans); } catch (e) { Logger.log('仮想売買の記録に失敗（売買プランは正常）: ' + e.message); }
   try { writeBriefingPicks_(r.targets, r.plans); } catch (e) { Logger.log('MarketBriefingへの書き込みに失敗（売買プランは正常）: ' + e.message); }   // 価格を直したときに「日本株_買い推奨」も合わせる
   try { ss.toast('売買プランを更新しました（買い推奨 ' + picks + '件 / 算出できた銘柄 ' + ok + '件 / 対象 ' + r.targets.length + '件）', APP_NAME_, 6); } catch (e) { /* UIが無い実行（スマホ用Webメニューのトリガー）では出さない */ }
   hideWorkSheets_();

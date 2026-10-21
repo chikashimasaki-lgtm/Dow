@@ -74,6 +74,7 @@ const EXPORTS = [
   'ML',
   'benchmarkReturn_', 'extractMlRow_', 'buildDateCloseMap_', 'barDateKey_',
   'numbersNotInSource_', 'flagUnsourcedNumbers_', 'buildAiPrompt_',
+  'paperTradeEvaluate_', 'paperTradePnl_',
   'wilsonInterval_', 'decideWeight_', 'SIGNAL_WEIGHT_', 'SIGNAL_DIR_',
 ];
 // 共通モジュール（symlink）も読み込む。本体が fetchWithRetry_ / confirmDestructive_ / to4_ を呼ぶため。
@@ -90,6 +91,7 @@ ${read('MarketMacro.js')}
 ${read('MLWeights.js')}
 ${read('WebMenu.js')}
 ${read('AiRecommend.js')}
+${read('PaperTrade.js')}
 return { ${EXPORTS.join(', ')} };
 `)(...Object.values(sandbox));
 
@@ -1288,6 +1290,33 @@ console.log('\n【33】買い推奨走査の時間予算（6分制限で強制�
   A.writeAiCommentsIntoPlan_(sh, rows, t);
   eq(!!(written['2,11'] && written['4,11'] && written['5,11']), true, 'テンプレ分が書き込まれる');
   eq(written['3,11'], undefined, '見送り行のメモは保持');
+}
+
+// ── 仮想売買（PaperTrade.js）──
+{
+  console.log('\n[仮想売買]');
+  const rec = { target: 110, stop: 95 };
+  const bar = (o, h, l, c) => ({ o, h, l, c });
+  let ev = M.paperTradeEvaluate_(rec, [], 40);
+  eq(ev.state, '保有中', '翌営業日の足が無ければ保有中');
+  ev = M.paperTradeEvaluate_(rec, [bar(100, 103, 98, 101), bar(101, 111, 100, 109)], 40);
+  eq([ev.state, ev.entry, ev.exitPrice, ev.days], ['利確', 100, 110, 2], '利確に先に届く');
+  ev = M.paperTradeEvaluate_(rec, [bar(100, 103, 94, 96)], 40);
+  eq([ev.state, ev.exitPrice, ev.days], ['損切り', 95, 1], '買った当日に損切りへ届く');
+  ev = M.paperTradeEvaluate_(rec, [bar(100, 112, 94, 100)], 40);
+  eq(ev.state, '損切り', '同日に両方触れたら損切りを先に数える');
+  ev = M.paperTradeEvaluate_(rec, [bar(100, 101, 99, 100), bar(92, 93, 90, 91)], 40);
+  eq([ev.state, ev.exitPrice], ['損切り', 92], '窓で損切り以下に飛んだら寄付値で約定');
+  ev = M.paperTradeEvaluate_(rec, [bar(94, 99, 93, 97)], 40);
+  eq(ev.state, '見送り', '寄付が損切り以下なら見送り');
+  ev = M.paperTradeEvaluate_(rec, [bar(111, 115, 110, 112)], 40);
+  eq(ev.state, '見送り', '寄付が利確以上なら見送り');
+  ev = M.paperTradeEvaluate_(rec, [bar(100, 101, 99, 100), bar(100, 102, 98, 101)], 2);
+  eq([ev.state, ev.exitPrice, ev.days], ['期限切れ', 101, 2], '期限で届かなければ終値で手仕舞い');
+  ev = M.paperTradeEvaluate_(rec, [bar(100, 101, 99, 100)], 2);
+  eq(ev.state, '保有中', '期限前で届かなければ保有中');
+  eq(M.paperTradePnl_({ entry: 100, exitPrice: 110 }, 200), { yen: 2000, pct: 10 }, '損益の計算');
+  eq(M.paperTradePnl_({ entry: 100, exitPrice: null }, 200), { yen: '', pct: '' }, '未決着は損益なし');
 }
 
 console.log('\n' + '─'.repeat(62));
