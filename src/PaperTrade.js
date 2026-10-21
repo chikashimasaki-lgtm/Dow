@@ -83,6 +83,12 @@ function paperLastRow_(sh) {
   return 0;
 }
 
+/** 本文の文字色を黒に揃える（白文字のままだと白背景で「データが空」に見える）。 */
+function paperBodyColor_(sh) {
+  sh.getRange(2, 1, Math.max(sh.getMaxRows() - 1, 1), PT_HEADERS_.length).setFontColor('#000000');
+  sh.getRange(2, 16, 9, 2).setFontColor('#000000');
+}
+
 function paperSheet_() {
   const ss = SpreadsheetApp.getActive();
   let sh = ss.getSheetByName(PT_SHEET_);
@@ -112,6 +118,7 @@ function paperSheet_() {
   sh.getRange(6, 17).setNumberFormat('0.0%');
   sh.getRange(8, 17).setNumberFormat('0.00');
   sh.getRange(2, PT_COL_.PNL, sh.getMaxRows() - 1, 1).setNumberFormat('#,##0');
+  paperBodyColor_(sh);
   sh.setTabColor('#7a5af8');
   return sh;
 }
@@ -155,6 +162,7 @@ function updatePaperTrades_() {
   const sh = ss.getSheetByName(PT_SHEET_);
   const lastRow = sh ? paperLastRow_(sh) : 0;
   if (lastRow < 2) return { checked: 0, settled: 0 };
+  paperBodyColor_(sh);
   const n = lastRow - 1;
   const vals = sh.getRange(2, 1, n, PT_HEADERS_.length).getValues();
   const disp = sh.getRange(2, 1, n, 2).getDisplayValues();
