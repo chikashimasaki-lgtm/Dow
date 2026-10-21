@@ -97,7 +97,7 @@ function webBuildPlansJob() {
 function doGet() {
   return HtmlService.createHtmlOutput(WEB_MENU_HTML_)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-    .setTitle('Dow Screener');
+    .setTitle('DowScreener');
 }
 
 const WEB_MENU_HTML_ = `<!DOCTYPE html><html lang="ja"><head>
@@ -124,7 +124,7 @@ const WEB_MENU_HTML_ = `<!DOCTYPE html><html lang="ja"><head>
   .px b{font-size:15px;} .tp{color:#1a7f37;} .sl{color:#c0392b;}
   small{color:#666;}
 </style></head><body>
-<h1>📈 Dow Screener</h1>
+<h1>📈 DowScreener</h1>
 <div class="status" id="status">読み込み中…</div>
 <button class="btn go" id="b1" onclick="act('scan')">▶ 走査/続行</button>
 <button class="btn gray" id="b2" onclick="act('plans')">↻ 売買プランだけ作り直す</button>
