@@ -74,7 +74,7 @@ const EXPORTS = [
   'ML',
   'benchmarkReturn_', 'extractMlRow_', 'buildDateCloseMap_', 'barDateKey_',
   'numbersNotInSource_', 'flagUnsourcedNumbers_', 'buildAiPrompt_',
-  'paperTradeEvaluate_', 'paperTradePnl_',
+  'paperTradeEvaluate_', 'paperTradePnl_', 'paperUnrealized_',
   'wilsonInterval_', 'decideWeight_', 'SIGNAL_WEIGHT_', 'SIGNAL_DIR_',
 ];
 // 共通モジュール（symlink）も読み込む。本体が fetchWithRetry_ / confirmDestructive_ / to4_ を呼ぶため。
@@ -1319,6 +1319,9 @@ console.log('\n【33】買い推奨走査の時間予算（6分制限で強制�
   eq(ev.state, '保有中', '期限前で届かなければ保有中');
   eq(M.paperTradePnl_({ entry: 100, exitPrice: 110 }, 200), { yen: 2000, pct: 10 }, '損益の計算');
   eq(M.paperTradePnl_({ entry: 100, exitPrice: null }, 200), { yen: '', pct: '' }, '未決着は損益なし');
+  eq(M.paperUnrealized_(100, 105, 200), 1000, '含み益 = (終値−買値)×株数');
+  eq(M.paperUnrealized_(100, 95, 200), -1000, '含み損はマイナス');
+  eq([M.paperUnrealized_(0, 105, 200), M.paperUnrealized_(100, 0, 200), M.paperUnrealized_(100, 105, 0)], ['', '', ''], '買値・終値・株数が欠けたら空欄');
 }
 
 console.log('\n' + '─'.repeat(62));

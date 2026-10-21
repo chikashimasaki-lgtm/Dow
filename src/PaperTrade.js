@@ -13,9 +13,9 @@
 
 const PT_SHEET_ = '仮想売買';
 const PT_HEADERS_ = ['記録日', 'コード', '銘柄名', '確度', '買い(翌寄付)', '利確', '損切り', '株数',
-  '状態', '決済日', '決済価格', '損益(円)', '損益%', '保有日数'];
+  '状態', '決済日', '決済価格', '損益(円)', '損益%', '保有日数', '含み益(円)'];
 const PT_COL_ = { DATE: 1, CODE: 2, NAME: 3, GRADE: 4, ENTRY: 5, TARGET: 6, STOP: 7, SHARES: 8,
-  STATE: 9, EXIT_DATE: 10, EXIT: 11, PNL: 12, PCT: 13, DAYS: 14 };
+  STATE: 9, EXIT_DATE: 10, EXIT: 11, PNL: 12, PCT: 13, DAYS: 14, UNREAL: 15 };
 const PT_OPEN_ = '保有中', PT_WIN_ = '利確', PT_LOSS_ = '損切り', PT_EXPIRED_ = '期限切れ', PT_SKIP_ = '見送り';
 
 /**
@@ -60,6 +60,20 @@ function paperTradePnl_(ev, shares) {
   return { yen: Math.round(diff * (shares || 0)), pct: Math.round(diff / ev.entry * 10000) / 100 };
 }
 
+/** 含み益（円）= (最新終値 − 買値) × 株数。保有中で買値・株数・終値が揃うときだけ。それ以外は空文字。 */
+function paperUnrealized_(entry, lastClose, shares) {
+  if (!(entry > 0) || !(lastClose > 0) || !(shares > 0)) return '';
+  return Math.round((lastClose - entry) * shares);
+}
+
+/** 既存の台帳に「含み益(円)」列の見出しが無ければ足す（見出しの書式は隣の列から写す。他のセルは触らない）。 */
+function paperEnsureColumns_(sh) {
+  const c = PT_COL_.UNREAL;
+  if (sh.getRange(1, c).getValue() === PT_HEADERS_[c - 1]) return;
+  sh.getRange(1, c - 1).copyTo(sh.getRange(1, c), SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+  sh.getRange(1, c).setValue(PT_HEADERS_[c - 1]);
+}
+
 /** 日足 t（秒）を JST の yyyy/MM/dd にする。 */
 function paperDateKey_(tSec) {
   return Utilities.formatDate(new Date(tSec * 1000), 'Asia/Tokyo', 'yyyy/MM/dd');
@@ -93,7 +107,7 @@ function paperBodyColor_(sh) {
   sh.getRange(2, 1, n, PT_HEADERS_.length).setFontColor('#000000').setVerticalAlignment('middle');
   sh.getRange(2, 16, 9, 2).setFontColor('#000000');
   [C.ENTRY, C.TARGET, C.STOP, C.EXIT].forEach(c => col(c).setNumberFormat('#,##0.##').setHorizontalAlignment('right'));
-  [C.SHARES, C.PNL].forEach(c => col(c).setNumberFormat('#,##0').setHorizontalAlignment('right'));
+  [C.SHARES, C.PNL, C.UNREAL].forEach(c => col(c).setNumberFormat('#,##0').setHorizontalAlignment('right'));
   col(C.PCT).setNumberFormat('#,##0.00').setHorizontalAlignment('right');
   col(C.DAYS).setNumberFormat('0').setHorizontalAlignment('right');
   col(C.CODE).setNumberFormat('@').setHorizontalAlignment('right');
@@ -162,7 +176,7 @@ function recordPaperTrades_(targets, plans) {
     if (have.has(today + '|' + t.code)) return;
     const p = plans[t.code];
     rows.push([today, t.code, t.name, String(t.kind || '').replace('買い推奨', ''), '', p.target, p.stop, p.shares || '',
-      PT_OPEN_, '', '', '', '', '']);
+      PT_OPEN_, '', '', '', '', '', '']);
   });
   if (!rows.length) return 0;
   const start = Math.max(last, 1) + 1;
@@ -182,6 +196,7 @@ function updatePaperTrades_() {
   const sh = ss.getSheetByName(PT_SHEET_);
   const lastRow = sh ? paperLastRow_(sh) : 0;
   if (lastRow < 2) return { checked: 0, settled: 0 };
+  paperEnsureColumns_(sh);
   paperBodyColor_(sh);
   paperSort_(sh);   // 行番号で更新するので、読む前に並べ終える
   const n = lastRow - 1;
@@ -210,12 +225,15 @@ function updatePaperTrades_() {
     if (ev.entry != null) sh.getRange(row, PT_COL_.ENTRY).setValue(ev.entry);
     if (ev.state === PT_OPEN_) {
       if (ev.days) sh.getRange(row, PT_COL_.DAYS).setValue(ev.days);
+      const entry = ev.entry != null ? ev.entry : Number(r[PT_COL_.ENTRY - 1]);
+      sh.getRange(row, PT_COL_.UNREAL).setValue(paperUnrealized_(entry, after.length ? after[after.length - 1].c : 0, Number(r[PT_COL_.SHARES - 1])));
       return;
     }
     const pnl = paperTradePnl_(ev, Number(r[PT_COL_.SHARES - 1]));
     const exitDate = ev.exitIndex >= 0 ? paperDateKey_(after[ev.exitIndex].t) : paperDateKey_(after[0].t);
     sh.getRange(row, PT_COL_.STATE, 1, 6).setValues([[ev.state, exitDate, ev.exitPrice == null ? '' : ev.exitPrice,
       pnl.yen, pnl.pct, ev.days || '']]);
+    sh.getRange(row, PT_COL_.UNREAL).setValue('');   // 決済したら含み益は消す（損益(円)に確定）
     settled++;
   });
   return { checked: idx.length, settled: settled };
