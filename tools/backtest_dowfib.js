@@ -43,12 +43,31 @@ Object.keys(process.env).filter(k => k.startsWith('DF_')).forEach(k => {
   M.DF[k.slice(3)] = Number(process.env[k]);
 });
 
+// 実験用: 日経225の地合い。REGIME=ma200（終値>200日線）/ ma50（終値>50日線）/ ma50up（50日線が20日前より上）
+const regimeOk = {};
+if (process.env.REGIME && fs.existsSync(path.join(BARS_DIR, '_N225.json'))) {
+  const j = JSON.parse(fs.readFileSync(path.join(BARS_DIR, '_N225.json'), 'utf8')).chart.result[0];
+  const cl = j.indicators.quote[0].close, ts = j.timestamp;
+  const ma = (i, n) => { let a = 0; for (let k = i - n + 1; k <= i; k++) a += cl[k]; return a / n; };
+  for (let i = 200; i < cl.length; i++) {
+    if (cl[i] == null) continue;
+    const d = new Date((ts[i] + 9 * 3600) * 1000).toISOString().slice(0, 10), R = process.env.REGIME;
+    regimeOk[d] = R === 'ma200' ? cl[i] > ma(i, 200) : R === 'ma50' ? cl[i] > ma(i, 50) : R === 'ma50up' ? ma(i, 50) > ma(i - 20, 50) : true;
+  }
+}
+const ONLY_A = process.env.ONLY_A === '1';
+const B_VOL = Number(process.env.B_VOL || 0), B_RETR = Number(process.env.B_RETR || 0);
 const resOf = txt => ({ getResponseCode: () => 200, getContentText: () => txt });
 const load = f => M.parseYahooBars_(resOf(fs.readFileSync(path.join(BARS_DIR, f), 'utf8')));
 const day = b => new Date((b.t + 9 * 3600) * 1000).toISOString().slice(0, 10);
 
 
 function simulate(bars, e, stop, target, hold) {
+  const t = simulate0(bars, e, stop, target, hold);
+  if (t) { const entry = bars[e + 1].o; t.R = (t.r + COST) * entry / (entry - stop); }   // 台帳と同じ尺度: (決済−買い)/(買い−損切り)
+  return t;
+}
+function simulate0(bars, e, stop, target, hold) {
   const n = e + 1;
   if (n + hold >= bars.length) return null;
   const entry = bars[n].o;
@@ -88,6 +107,8 @@ for (const f of files) {
     const win = bars.slice(e - 20, e + 1);
     if (!M.isLiquidEnough_(win)) continue;
     const s = M.dfSetup_(bars, e, rawP, rawM);
+    if (s && process.env.REGIME && regimeOk[d] !== true) continue;
+    if (s && s.grade === 'B' && (ONLY_A || s.volRatio < B_VOL || s.retr < B_RETR)) continue;
     if (s) {
       const t = simulate(bars, e, s.stop, s.target, H);
       (byDay[d] = byDay[d] || []).push({ code, s, t, fr });
@@ -105,11 +126,11 @@ for (const f of files) {
 
 const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN;
 const pct = x => (x * 100).toFixed(2) + '%';
-function report(label, picks, key) {
+function report(label, picks, key, rkey) {
   const rs = picks.map(p => key(p)).filter(r => r != null);
   const wins = rs.filter(r => r > 0);
   const gw = wins.reduce((a, b) => a + b, 0), gl = -rs.filter(r => r <= 0).reduce((a, b) => a + b, 0);
-  return `${label.padEnd(26)} n=${String(rs.length).padStart(5)}  勝率=${(wins.length / rs.length * 100).toFixed(1)}%  平均=${pct(mean(rs))}  PF=${(gw / gl).toFixed(2)}`;
+  return `${label.padEnd(26)} n=${String(rs.length).padStart(5)}  勝率=${(wins.length / rs.length * 100).toFixed(1)}%  平均=${pct(mean(rs))}  PF=${(gw / gl).toFixed(2)}` + (rkey ? `  平均R=${mean(picks.map(rkey).filter(x => x != null)).toFixed(2)}` : '');
 }
 
 function pick(dayMap, scoreFn, filterDay) {
@@ -123,7 +144,7 @@ function pick(dayMap, scoreFn, filterDay) {
   return out;
 }
 
-const periods = [['検討期間(〜' + SPLIT + ')', d => d < SPLIT], ['検証期間(' + SPLIT + '〜)', d => d >= SPLIT]];
+const periods = process.env.THREE ? [['A 〜2022', d => d < '2022-01-01'], ['B 2022〜2025-09', d => d >= '2022-01-01' && d < '2025-10-01'], ['C 2025-10〜', d => d >= '2025-10-01']] : [['検討期間(〜' + SPLIT + ')', d => d < SPLIT], ['検証期間(' + SPLIT + '〜)', d => d >= SPLIT]];
 console.log(`銘柄 ${nStocks} / 最長保有 ${H}日 / DF=${JSON.stringify(M.DF)}`);
 console.log('ex=同じ日の全銘柄平均(' + FWD + '日保有)との差。損切/利確=翌日寄付で買い、損切り・利確・最長' + H + '日で手仕舞い');
 const exOf = p => p.fr == null ? null : p.fr - benchMean[p.d];
@@ -136,7 +157,7 @@ for (const [pl, inP] of periods) {
   const top = pick(byDay, x => x.s.score, d => inP(d));
   const A = top.filter(p => p.s.grade === 'A'), B = top.filter(p => p.s.grade === 'B');
   for (const [lab, set] of [['新: 上位' + M.DF.TOP_N, top], ['新: 確度A', A], ['新: 確度B', B]]) {
-    console.log(report(lab + ' 損切/利確', set, p => p.t && p.t.r));
+    console.log(report(lab + ' 損切/利確', set, p => p.t && p.t.r, p => p.t && p.t.R));
     console.log(report(lab + ' ' + FWD + '日保有', set, p => p.fr) + `  ex=${pct(mean(set.map(exOf).filter(x => x != null)))}`);
   }
   console.log(`  1日平均 ${(top.length / days.length).toFixed(2)}件（うちA ${(A.length / days.length).toFixed(2)}件）`);

@@ -44,6 +44,12 @@ const DF = {
   // 日足の前日比が -PANIC_DROP 以下の急落があった日から PANIC_WAIT_DAYS 営業日が経つまでは、買い推奨に出さない。
   PANIC_WAIT_DAYS: 0,   // 既定は無効: 10年バックテストで検証期間の平均リターンが下がった（上位5 1.99%→1.50%）。有効にするなら 3
   PANIC_DROP: 0.03,
+  // ── 確度Bの出来高下限（2026-10-21 台帳の成績不振を受けて追加。0 なら無効）──
+  // 10年・1,217銘柄の上位5・損切/利確（平均R=台帳と同じ (決済−買い)/(買い−損切り)）:
+  //   〜2021 平均R 0.06→0.12（PF 1.06→1.23）／2022〜2025-09 0.19→0.24（PF 1.29→1.37）／2025-10〜 0.39→0.55（PF 1.69→2.18）。
+  //   3期間とも改善。件数は 1日 0.85→0.51件。確度Bだけが〜2021で平均R −0.02（PF 0.90）と弱かったため B だけに掛ける。
+  //   同時に試した日経225の地合い（200日線・50日線・50日線の向き）は〜2021が改善せず不採用。1.15/1.3/1.5/2 から 1.3 を選んだ（複数値の比較なので多少の当てはめを含む）。
+  B_MIN_VOL_RATIO: 1.3,  // 確度B: 当日出来高 / 直近20日平均 がこれ未満なら不成立
   DESC_HIGHS: 0,         // 戻り高値の連続切り下げで除外（1・2とも両期間で成績が悪化したため無効のまま）
 };
 
@@ -180,6 +186,7 @@ function dfSetup_(bars, e, rawP, rawM) {
   if (c.MIN_VOL_RATIO > 0 && volRatio < c.MIN_VOL_RATIO) return null;
   if (c.BREAK_MIN_ATR > 0 && T.c - mh.p < atr * c.BREAK_MIN_ATR) return null;
   const grade = (retr >= c.A_RETR_MIN && volRatio >= c.A_VOL_RATIO) ? 'A' : 'B';
+  if (grade === 'B' && c.B_MIN_VOL_RATIO > 0 && volRatio < c.B_MIN_VOL_RATIO) return null;
   return {
     grade: grade, close: T.c, stop: stop, target: target,
     retr: retr, volRatio: volRatio, reaction: reaction,

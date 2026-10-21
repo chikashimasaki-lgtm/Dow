@@ -810,7 +810,9 @@ console.log('\n【17】ダウ理論のスイングとトレンド判定');
     eq(s.grade, 'A', '押し38.2%以上かつ出来高1.5倍以上なら確度A');
     near(s.target, 94 + 47 * 1.618, 1e-9, '利確 = 押し安値 + 上昇幅 × 1.618');
     eq(s.stop < 117 && s.stop > 116, true, '損切りは押し目の安値（117）の少し下');
-    eq(M.dfSetup_(mk(path, 1200)).grade, 'B', '出来高が増えていなければ確度B');
+    eq(M.dfSetup_(mk(path, 1400)).grade, 'B', '出来高が1.5倍に届かなければ確度B');
+    eq(M.dfSetup_(mk(path, 1200)), null, '確度Bは出来高が1.3倍に届かなければ成立しない（B_MIN_VOL_RATIO）');
+    { const off = M.DF.B_MIN_VOL_RATIO; M.DF.B_MIN_VOL_RATIO = 0; eq(M.dfSetup_(mk(path, 1200)).grade, 'B', 'B_MIN_VOL_RATIO=0 なら従来どおり確度B'); M.DF.B_MIN_VOL_RATIO = off; }
 
     // 前日すでに戻り高値を超えていたら「初めて上抜けた日」ではない
     const p2 = path.slice(0, -2).concat([[123, 134], [124, 136]]);
