@@ -261,3 +261,37 @@ function claspMarginState() {
   let latest = null; try { latest = findLatestMtseisan_(); } catch (e) { latest = 'エラー: ' + e.message; }
   return { rows, hist: PropertiesService.getScriptProperties().getProperty(MACRO.RATIO_HIST_PROP), latest };
 }
+
+// 診断用（読み取り専用）: GASからJPXの信用取引現在高ページと最新xlsxを取得できるか確かめる。
+function claspJpxFetchTry() {
+  const base = 'https://www.jpx.co.jp';
+  const out = {};
+  const r = UrlFetchApp.fetch(base + '/markets/statistics-equities/margin/04.html', { muteHttpExceptions: true });
+  out.pageCode = r.getResponseCode();
+  const links = (r.getContentText().match(/href="([^"]*_mtcurrent\.xlsx)"/g) || []).map(s => s.slice(6, -1));
+  out.links = links;
+  if (links.length) {
+    const x = UrlFetchApp.fetch(base + links[links.length - 1], { muteHttpExceptions: true });
+    out.xlsxCode = x.getResponseCode();
+    out.xlsxBytes = x.getBlob().getBytes().length;
+  }
+  return out;
+}
+
+// 診断用: JPX直取得→履歴シート追記を1回実行して、最新週の値を返す。
+function claspJpxSync() { return syncJpxMarginHistory_(); }
+
+// 診断用（読み取り専用）: 信用残推移シートの全行と、相場マクロの売残欄を返す。
+function claspJpxHistory() {
+  const ss = SpreadsheetApp.getActive();
+  const sh = ss.getSheetByName(JPX_MARGIN.SHEET);
+  const m = ss.getSheetByName(MACRO.INPUT_SHEET);
+  return {
+    hist: sh ? sh.getDataRange().getDisplayValues().map(r => r.join(' | ')) : null,
+    tabs: ss.getSheets().map(s => s.getName()),
+    macroSell: m ? m.getRange(2, 1, 1, 3).getDisplayValues()[0] : null,
+  };
+}
+
+// 診断用: 相場マクロが使う取り込み口（JPX直取得→Drive）を直接呼んで戻り値を返す。
+function claspImportTseTry() { return importTseMarginFile_(); }

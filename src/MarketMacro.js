@@ -594,6 +594,18 @@ function fetchIndexCloses_(symbol) {
 // Drive詳細サービス(v2)で Google スプレッドシートに変換して東証の売残/買残を読み取る。
 // 返り値 { sellOku, ratio, sellShares, buyShares } / 見つからなければ null（→手入力にフォールバック）。
 function importTseMarginFile_() {
+  // まずJPXから直接取得（JpxMargin.js）。履歴シートにも追記される。失敗したら従来のDriveファイルに戻る。
+  try {
+    var j = syncJpxMarginHistory_();
+    if (j && j.date) {
+      var age = Math.floor((Date.now() - new Date(j.date.replace(/\//g, '-') + 'T00:00:00+09:00').getTime()) / 86400000);
+      if (age > JPX_MARGIN.STALE_DAYS) Logger.log('⚠ JPX信用残の最新が申込み日' + j.date + '（' + age + '日前）です');
+      Logger.log('東証信用残 JPX直取得: 申込み日' + j.date + ' 売残=' + j.sellOku + '億 倍率=' + j.ratioShares);
+      return { sellOku: j.sellOku, ratio: j.ratioShares, date: j.date };
+    }
+  } catch (e) {
+    Logger.log('JPX直取得に失敗、Driveのmtseisanに切り替え: ' + e.message);
+  }
   var latest = findLatestMtseisan_();   // Drive REST v3（マイドライブ＋共有ドライブ横断）
   if (!latest) { Logger.log('mtseisan*.xls が見つかりません（JPX信用残ファイルをDriveに置いてください）'); return null; }
 
