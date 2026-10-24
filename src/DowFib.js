@@ -245,3 +245,11 @@ function claspDowFibCheck(code, date) {
   return { date, close: bars[e].c, signal: s ? { grade: s.grade, retr: s.retr, volRatio: s.volRatio, breakLevel: s.breakLevel, atr: s.atr } : null,
     filters: { MIN_VOL_RATIO: DF.MIN_VOL_RATIO, BREAK_MIN_ATR: DF.BREAK_MIN_ATR } };
 }
+
+// clasp run 用（読み取り専用）。「実行記録」シートの末尾 n 行を返す。トリガーが動いているかの確認用。
+function claspRunLogTail(n) {
+  const sh = SpreadsheetApp.getActive().getSheetByName('実行記録');
+  if (!sh) return { error: '実行記録シートなし' };
+  const last = sh.getLastRow(), k = Math.min(n || 30, last - 1);
+  return { lastRow: last, rows: sh.getRange(last - k + 1, 1, k, 6).getDisplayValues().map(r => r.join(' | ')) };
+}
