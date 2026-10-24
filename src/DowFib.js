@@ -253,3 +253,11 @@ function claspRunLogTail(n) {
   const last = sh.getLastRow(), k = Math.min(n || 30, last - 1);
   return { lastRow: last, rows: sh.getRange(last - k + 1, 1, k, 6).getDisplayValues().map(r => r.join(' | ')) };
 }
+
+// 診断用（読み取り専用）: 相場マクロの入力欄と信用倍率の履歴、Driveの mtseisan 最新ファイル名を返す。
+function claspMarginState() {
+  const sh = SpreadsheetApp.getActive().getSheetByName(MACRO.INPUT_SHEET);
+  const rows = sh ? sh.getRange(1, 1, Math.min(sh.getLastRow(), 14), Math.min(sh.getLastColumn(), 6)).getDisplayValues().map(r => r.join(' | ').slice(0, 170)) : [];
+  let latest = null; try { latest = findLatestMtseisan_(); } catch (e) { latest = 'エラー: ' + e.message; }
+  return { rows, hist: PropertiesService.getScriptProperties().getProperty(MACRO.RATIO_HIST_PROP), latest };
+}
